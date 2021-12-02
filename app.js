@@ -6,10 +6,13 @@
   which we foolishly trust (but this is just in development)
   and the app gets back a "secret"
   It then sends the email and secret in all future interactions.
+
   The user can add a post to a bulletin board
   and see all of the posts for a bulletin board
+
   Anyone can post to any board and if the board doesn't exist,
   it will be created.
+
   The next version will use email to validate that the user
   is who they say they are by sending a code to their email
   If they enter that code, then they are validate, otherwise
@@ -27,7 +30,7 @@ const mongoose = require('mongoose');
 const mongoDBremoteURI =
   'mongodb+srv://admin:Pxsygm6ngKb3iFa@cluster0.khwig.mongodb.net/test';
 const mongoDBlocalURI = 'mongodb://localhost/bboard';
-const mongodbURI = process.env.MONGODB_URL || mongoDBremoteURI;
+const mongodbURI = mongoDBremoteURI; //(process.env.MONGODB_URL || mongoDBremoteURI)
 
 mongoose.connect(mongodbURI);
 const db = mongoose.connection;
@@ -36,6 +39,9 @@ db.once('open', function () {
   console.log('we are connected!!!');
   console.log(mongodbURI);
 });
+
+const User = require('./models/User');
+const Post = require('./models/Post');
 
 var app = express();
 
@@ -49,99 +55,22 @@ app.use(express.urlencoded({extended: false}));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/', (req, res) => {
-  res.send('This is a simple demo app for CS153a Fall21 at Brandeis!');
-});
-
-// This show how middleware works ..
-// For any request to '/testmiddleware'
-// the app prints three messages and then sends back a message
-app.use(
-  '/testmiddleware',
-  (req, res, next) => {
-    console.log('Look, I got called!!!!');
-    next();
-  },
-
-  (req, res, next) => {
-    console.log('Me Too!!!!');
-    next();
-  },
-
-  (req, res, next) => {
-    console.log('Me three !!!!');
-    next();
-  },
-
-  (req, res) => {
-    res.send('This is a middleware test!');
-  }
-);
-
-// this show how to use res.json to send back a json term
-app.get('/hello', async (req, res, next) => {
+app.get('/testemail', async (req, res, next) => {
   try {
-    res.json({msg: 'Hello World', time: new Date()});
-  } catch (e) {
-    console.log(`error in hello ${e}`);
-    next(e);
+    const msg = {
+      to: 'timhickey@me.com', // Change to your recipient
+      from: 'tjhickey@brandeis.edu', // Change to your verified sender
+      subject: 'Testing email from heroku server',
+      text: 'if you got this then it worked on ' + new Date(),
+      //html: '<strong>and easy to do anywhere, even with Node.js</strong>',
+    };
+    await sgMail.send(msg);
+    console.log('Email sent');
+    res.send('sent email!');
+  } catch (error) {
+    next(error);
   }
 });
-
-// this shows how to maintain local state on the server
-// and send the state to the client, but restarting the server
-// resets the state, so it doesn't persist!
-let counter = 0;
-app.get('/counter', async (req, res, next) => {
-  try {
-    counter += 1;
-    res.json({value: counter, time: new Date()});
-  } catch (e) {
-    next(e);
-  }
-});
-
-// here is another example of maintaining local state
-// in this case, a list of message,
-// as long as the server is not restarted
-// we have two routes
-//   a get route to return all the messages
-//   a post route to add a new message
-// restarting the server resets messages to []
-// so the messages don't really persist
-let messages = [];
-app.get('/bboard', async (req, res, next) => {
-  try {
-    res.json(messages);
-  } catch (e) {
-    next(e);
-  }
-});
-
-app.post('/bboard', async (req, res, next) => {
-  try {
-    let msg = req.body;
-    messages.push(msg);
-    res.json(messages);
-  } catch (e) {
-    next(e);
-  }
-});
-
-// this is the template for an asynchronous route
-// i.e. one that might access the Database or an API
-// and might generate an error!
-app.get('/test', async (req, res, next) => {
-  try {
-    res.send('testing');
-  } catch (e) {
-    console.log('error in /test');
-    next(e);
-  }
-});
-
-const User = require('./models/User');
-
 // the user sends an email and the server
 // creates a secret and puts the secret and email
 // in the User collection
@@ -158,25 +87,31 @@ app.post('/register', async (req, res, next) => {
       email: email,
       secret: secret,
       createdAt: new Date(),
+      validated: false,
     };
     console.log('inside /register with userData=');
     console.dir(userData);
-    // delete all the previous user elements with that email
-    await User.deleteMany({email: email}); // clean!
-    console.log();
-    // add this new user document to the collection
-    const user = new User(userData); // create document
-    await user.save(); // store in collection on db server
-    console.log('sending secret back to user');
+    const userList = await User.find({email: email});
+    console.log('userList length=' + userList.length);
+    let user = null;
+    if (userList.length == 0) {
+      user = new User(userData); // create document
+      await user.save(); // store in collection on db server
+      console.log('saving new user data');
+    } else {
+      user = userList[0];
+      console.log('getting userList[0]');
+    }
+    console.log(`user: ${user.email} ${user.secret}`);
+
     // respond to the user, sending them the email and secret
     // they will store it in Async Storage
     // and use it to identify themselves in all future calls
-    res.json({email: email, secret: secret});
+    res.json({email: user.email, secret: user.secret, userid: user._id});
   } catch (e) {
     next(e);
   }
 });
-
 // show all of the users and their secrets!!
 // this is not secure, but is used for debugging
 // we should really obfuscate the secrets
@@ -191,7 +126,7 @@ app.get('/users', async (req, res, next) => {
 });
 
 // allow a registered user to add a post to a bulletin board
-const Post = require('./models/Post');
+
 app.post('/addComment', async (req, res, next) => {
   try {
     // credentials of the user
@@ -246,9 +181,54 @@ app.get('/allposts', async (req, res, next) => {
 app.post('/posts', async (req, res, next) => {
   try {
     const bboard = req.body.bboard;
-    const posts = await Post.find({bboard}).sort({createdAt: -1});
+    const posts = await Post.find({bboard: bboard}).sort({createdAt: -1});
     console.dir(posts);
     res.json(posts);
+  } catch (e) {
+    next(e);
+  }
+});
+//delete posts
+app.post('/deletePost', async (req, res, next) => {
+  try {
+    console.log('entering deletePost');
+    const email = req.body.email;
+    const secret = req.body.secret;
+    const postid = req.body.postid;
+    console.log('in deletePost');
+    const user = await User.findOne({email, secret});
+    console.log('found user ' + user._id);
+    const post = await Post.findOne({_id: postid});
+    console.log('found post author= ' + post.author);
+    console.dir(post);
+    if (post && user && post.author == user.id) {
+      await Post.deleteOne({_id: postid});
+      res.json({action: 'deleted'});
+    } else {
+      res.json({action: 'failed', msg: 'you do not own the post'});
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+// how would we find all of the bulletin boards ...
+// and send back a list of bboard names?
+const getBBoardNames = async next => {
+  try {
+    const bboards = await Post.find({}).distinct('bboard');
+    return bboards;
+    // now loop through and get unique bboard names
+    // better to use a smarter query
+  } catch (e) {
+    next(e);
+  }
+};
+
+app.get('/bboardNames', async (req, res, next) => {
+  try {
+    const names = await getBBoardNames(next);
+    res.json(names);
   } catch (e) {
     next(e);
   }
