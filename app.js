@@ -40,6 +40,9 @@ db.once('open', function () {
   console.log(mongodbURI);
 });
 
+const sgMail = require('@sendgrid/mail');
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
 const User = require('./models/User');
 const Post = require('./models/Post');
 
@@ -127,73 +130,67 @@ app.get('/users', async (req, res, next) => {
 
 // allow a registered user to add a post to a bulletin board
 
-app.post('/addComment',
-  async (req,res,next) => {
-    try {
-          // credentials of the user
-          const email = req.body.email
-          const secret = req.body.secret
+app.post('/addComment', async (req, res, next) => {
+  try {
+    // credentials of the user
+    const email = req.body.email;
+    const secret = req.body.secret;
 
-          // content of the post
-          const bboard = req.body.bboard // name of the bboard
-          const title = req.body.title
-          const text = req.body.text
+    // content of the post
+    const bboard = req.body.bboard; // name of the bboard
+    const title = req.body.title;
+    const text = req.body.text;
 
-          // check that the user is who they say they are!
-          // if not, then return with an empty response
-          // otherwise
-          const user = await User.find({email,secret})
-          if (user.length==0){
-            res.json({result:'no such user',success:false})
-          } else {
-            const post =
-                    {
-                      bboard,
-                      title,
-                      text,
-                      createdAt:new Date(),
-                      author: user[0].id,
-                    }
-            console.log('post=')
-            console.dir(post)
-            const postDoc = new Post(post)
-            await postDoc.save()
-            res.json({result:'saved post',success:true})
-          }
-    } catch(e){
-      next(e)
+    // check that the user is who they say they are!
+    // if not, then return with an empty response
+    // otherwise
+    const user = await User.find({email, secret});
+    if (user.length == 0) {
+      res.json({result: 'no such user', success: false});
+    } else {
+      const post = {
+        bboard,
+        title,
+        text,
+        createdAt: new Date(),
+        author: user[0].id,
+      };
+      console.log('post=');
+      console.dir(post);
+      const postDoc = new Post(post);
+      await postDoc.save();
+      res.json({result: 'saved post', success: true});
     }
-})
+  } catch (e) {
+    next(e);
+  }
+});
 
 // show all the posts for all of the bulletin boards
 // this is just for debugging
-app.get('/allposts',
-  async (req,res,next) => {
-    try {
-      const posts =
-        await Post.find({})
-      console.dir(posts)
-      res.json(posts)
-    } catch(e){
-      next(e)
-    }
-})
+app.get('/allposts', async (req, res, next) => {
+  try {
+    const posts = await Post.find({});
+    console.dir(posts);
+    res.json(posts);
+  } catch (e) {
+    next(e);
+  }
+});
 
 // show all the posts for one bboard
 // this is just for debugging
 // we should really only show the N most recent for some small N
-app.post('/posts',
-  async (req,res,next) => {
-    try {
-      const bboard = req.body.bboard
-      const posts =
-        await Post.find({bboard:bboard}).sort({createdAt:-1})
-      console.dir(posts)
-      res.json(posts)
-    } catch(e){
-      next(e)
-    }
-})
+app.post('/posts', async (req, res, next) => {
+  try {
+    const bboard = req.body.bboard;
+    const posts = await Post.find({bboard: bboard}).sort({createdAt: -1});
+    console.dir(posts);
+    res.json(posts);
+  } catch (e) {
+    next(e);
+  }
+});
 //delete posts
 app.post('/deletePost', async (req, res, next) => {
   try {
@@ -220,30 +217,25 @@ app.post('/deletePost', async (req, res, next) => {
 
 // how would we find all of the bulletin boards ...
 // and send back a list of bboard names?
-const getBBoardNames = async (next) => {
+const getBBoardNames = async next => {
   try {
-    const bboards = await Post.find({})
-       .distinct('bboard')
-    return bboards
+    const bboards = await Post.find({}).distinct('bboard');
+    return bboards;
     // now loop through and get unique bboard names
     // better to use a smarter query
-  }catch(e){
-    next(e)
+  } catch (e) {
+    next(e);
   }
+};
 
-}
-
-app.get('/bboardNames',
-  async (req,res,next) => {
-    try {
-      const names =
-        await getBBoardNames(next)
-      res.json(names)
-    } catch(e){
-      next(e)
-    }
-})
-
+app.get('/bboardNames', async (req, res, next) => {
+  try {
+    const names = await getBBoardNames(next);
+    res.json(names);
+  } catch (e) {
+    next(e);
+  }
+});
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
